@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Data Format Comparison: CSV, Avro, ORC, Parquet, Arrow</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.0/mermaid.min.js"></script>
+<style>
+  :root {
+    --bg: #ffffff;
+    --text: #1c1f26;
+    --muted: #5b6472;
+    --border: #e2e5ea;
+    --header-bg: #f4f6f8;
+    --accent: #3457d5;
+    --accent-soft: #eef1fd;
+    --row-based: #fef6e7;
+    --columnar-disk: #eaf3ff;
+    --table-fmt: #f1eafc;
+    --in-memory: #eafaf1;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 40px 24px 64px;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    line-height: 1.5;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; }
+  h1 {
+    font-size: 24px;
+    font-weight: 650;
+    margin: 0 0 6px;
+    letter-spacing: -0.01em;
+  }
+  .subtitle {
+    color: var(--muted);
+    font-size: 14.5px;
+    margin: 0 0 36px;
+  }
+  h2 {
+    font-size: 16px;
+    font-weight: 650;
+    margin: 44px 0 14px;
+    letter-spacing: -0.01em;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13.5px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  thead th {
+    background: var(--header-bg);
+    text-align: left;
+    padding: 11px 14px;
+    font-weight: 650;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  tbody td {
+    padding: 11px 14px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+    color: var(--text);
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:nth-child(even) { background: #fbfbfc; }
+  td.fmt {
+    font-weight: 650;
+    white-space: nowrap;
+  }
+  .tag {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 999px;
+    margin-top: 4px;
+  }
+  .tag.row { background: var(--row-based); color: #8a5a00; }
+  .tag.disk { background: var(--columnar-disk); color: #1c4ea8; }
+  .tag.mem { background: var(--in-memory); color: #1c7a4d; }
+
+  .diagram-card {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px 12px 8px;
+    background: #fdfdfe;
+  }
+  .mermaid { display: flex; justify-content: center; }
+
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin-top: 14px;
+    font-size: 12.5px;
+    color: var(--muted);
+  }
+  .legend-item { display: flex; align-items: center; gap: 6px; }
+  .swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+
+  .note {
+    font-size: 13px;
+    color: var(--muted);
+    margin-top: 10px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>CSV, Avro, ORC, Parquet & Arrow — how they fit together</h1>
+  <p class="subtitle">A working comparison of row vs. columnar formats, on-disk vs. in-memory, and where table formats and Arrow sit in a real pipeline.</p>
+
+  <h2>Comparison table</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Format</th>
+        <th>Layout</th>
+        <th>Where it lives</th>
+        <th>Best for</th>
+        <th>Compression</th>
+        <th>Schema evolution</th>
+        <th>Splittable</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="fmt">CSV / JSON</td>
+        <td>Row-based, text<span class="tag row">row</span></td>
+        <td>Disk</td>
+        <td>Human-readable exports, small/simple data, universal compatibility</td>
+        <td>None (unless externally gzipped)</td>
+        <td>None — no embedded schema, everything is text</td>
+        <td>CSV: yes (line splits). JSON: usually no</td>
+      </tr>
+      <tr>
+        <td class="fmt">Avro</td>
+        <td>Row-based, binary<span class="tag row">row</span></td>
+        <td>Disk / streaming</td>
+        <td>Write-heavy pipelines, Kafka messages, fast full-row writes</td>
+        <td>Good (binary + codec)</td>
+        <td>Excellent — schema embedded per file, designed for add/rename/remove rules</td>
+        <td>Yes</td>
+      </tr>
+      <tr>
+        <td class="fmt">ORC</td>
+        <td>Columnar<span class="tag disk">on-disk</span></td>
+        <td>Disk</td>
+        <td>Hive-native tables, ACID update/delete/merge, highly selective point queries (bloom filters)</td>
+        <td>Very good, fine-grained indexing (index strides)</td>
+        <td>Good — name-based matching, safe type widening</td>
+        <td>Yes (stripes)</td>
+      </tr>
+      <tr>
+        <td class="fmt">Parquet</td>
+        <td>Columnar<span class="tag disk">on-disk</span></td>
+        <td>Disk</td>
+        <td>General analytics, wide scans/aggregations, broadest engine + lakehouse support</td>
+        <td>Very good, dictionary/RLE/delta encodings + codec choice</td>
+        <td>Good — name-based matching, safe type widening, field IDs via Iceberg</td>
+        <td>Yes (row groups)</td>
+      </tr>
+      <tr>
+        <td class="fmt">Delta Lake / Iceberg / Hudi</td>
+        <td>Table format layer (built on Parquet, mostly)</td>
+        <td>Disk + metadata log</td>
+        <td>Transactions, time travel, safe concurrent writes, robust renames/evolution</td>
+        <td>Inherits Parquet's</td>
+        <td>Best — explicit, versioned, tracks true renames via field IDs</td>
+        <td>Yes</td>
+      </tr>
+      <tr>
+        <td class="fmt">Apache Arrow</td>
+        <td>Columnar<span class="tag mem">in-memory</span></td>
+        <td>RAM</td>
+        <td>Zero-copy data exchange between engines/languages during computation</td>
+        <td>None (it's a live memory layout, not a storage format)</td>
+        <td>N/A — transient, defined per compute session</td>
+        <td>N/A</td>
+      </tr>
+      <tr>
+        <td class="fmt">Feather</td>
+        <td>Columnar<span class="tag mem">Arrow snapshot</span></td>
+        <td>Disk</td>
+        <td>Fast short-lived read/write between processes, not long-term storage</td>
+        <td>Light (less than Parquet/ORC)</td>
+        <td>Minimal</td>
+        <td>Yes</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>How they connect in a pipeline</h2>
+  <div class="diagram-card">
+    <div class="mermaid">
+flowchart TD
+    subgraph RAW["Raw / landing formats"]
+      CSV["CSV"]
+      AVRO["Avro<br/>(e.g. Kafka topic)"]
+    end
+
+    ETL["ETL / ingestion job<br/>rewrites row-based data as columnar"]
+
+    subgraph DISK["Columnar on-disk (analytics storage)"]
+      PARQUET["Parquet"]
+      ORC["ORC"]
+    end
+
+    subgraph TABLEFMT["Table format layer (metadata only — files unchanged)"]
+      LAKEFMT["Delta Lake / Iceberg / Hudi<br/>transaction log · snapshots · versioned schema<br/>points at a set of Parquet/ORC files"]
+    end
+
+    subgraph ENGINE["Query engine — e.g. Spark, DuckDB, Snowflake, Athena"]
+      direction LR
+      READ["reads file bytes"] --> DECODE["decodes into<br/>Arrow buffers in memory"] --> COMPUTE["query / compute"]
+    end
+
+    FEATHER["Feather<br/>(Arrow layout snapshotted to disk)"]
+    OTHERTOOL["Another Arrow-aware tool<br/>e.g. pandas, R, Polars"]
+
+    CSV --> ETL
+    AVRO --> ETL
+    CSV -.small one-off read.-> READ
+    AVRO -.stream consumer, no lake table.-> READ
+    ETL --> PARQUET
+    PARQUET --> LAKEFMT
+    ORC -.less common.-> LAKEFMT
+    LAKEFMT --> READ
+    PARQUET --> READ
+    ORC --> READ
+    COMPUTE -->|writes results back as| PARQUET
+    DECODE -.snapshot to disk.-> FEATHER
+    FEATHER --> OTHERTOOL
+
+    classDef rowStyle fill:#fef6e7,stroke:#e8c27a,color:#5c4200;
+    classDef etlStyle fill:#fdeee0,stroke:#eab281,color:#8a4400,font-weight:600;
+    classDef diskStyle fill:#eaf3ff,stroke:#a9c9f5,color:#1c4ea8;
+    classDef tableStyle fill:#f1eafc,stroke:#c9aef2,color:#5b2d91;
+    classDef memStyle fill:#eafaf1,stroke:#9fdcb8,color:#1c7a4d;
+    classDef engineStyle fill:#f4f6f8,stroke:#c7ccd4,color:#1c1f26,font-weight:600;
+
+    class CSV,AVRO rowStyle
+    class ETL etlStyle
+    class PARQUET,ORC diskStyle
+    class LAKEFMT tableStyle
+    class DECODE,FEATHER,OTHERTOOL memStyle
+    class READ,COMPUTE engineStyle
+    </div>
+    <p class="note">The dashed arrows are the exceptions, not the default path: a small CSV or a raw Avro stream can be read directly by an engine, but for repeated analytical queries at scale, raw row-based data is first converted to Parquet (the ETL step) rather than queried in place. Arrow isn't a separate destination engines send data to — decoding into Arrow buffers is literally what "reading the file" means inside the engine, shown here as a step inside the engine box. Feather is a side-door: an optional snapshot of those in-memory Arrow buffers written to disk for fast handoff to another Arrow-aware tool, not part of the main storage path.</p>
+  </div>
+
+</div>
+<script>
+  mermaid.initialize({ startOnLoad: true, theme: 'base', themeVariables: { fontFamily: '-apple-system, Segoe UI, Helvetica, Arial, sans-serif', primaryColor: '#eef1fd', primaryBorderColor: '#c7ccd4', lineColor: '#9aa2ad', fontSize: '13px' } });
+</script>
+</body>
+</html>
